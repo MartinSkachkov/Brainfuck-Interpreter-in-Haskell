@@ -1,0 +1,1 @@
+converts the input number to the corresponding ascii value + [, .]

@@ -1,0 +1,2 @@
+prints powers of two = comment but still interprets it because everything exept for the saved characters is count as a comment
+>++++++++++>>+<+[[+++++[>++++++++<-]>.<++++++[>--------<-]+<<]>.>[->[<++>-]<[>+<-[>+<-[>+<-[>+<-[>+<-[>+<-[>+<-[>+<-[>+<-[>[-]>[-]++<<-[>+<-]]]]]]]]]]]+>>]<<]
