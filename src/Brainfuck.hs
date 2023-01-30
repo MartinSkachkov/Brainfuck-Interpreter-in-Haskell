@@ -1,13 +1,12 @@
-module Brainfuck where
-
 import Data.Char hiding (isNumber)
+import Data.Either
+import Data.Maybe (isNothing)
 import System.IO
-import Prelude hiding (Left, Right)
 
 -- a command in Brainfuck is one character of the source code
 data BrainfuckCommand
-  = Right -- >
-  | Left -- <
+  = MvRight -- >
+  | MvLeft -- <
   | Incr -- +
   | Decr -- -
   | Print -- .
@@ -28,18 +27,16 @@ newtype Program = Program [BrainfuckCommand]
 -------------------------------------------------------------------
 -- Parser
 -- sourceCode = "[->+<]"
-parser :: String -> Program
-parser "" = error "Empty program!"
-parser sourceCode
-  | checkSyntax sourceCode = validate $ Program $ convertToCmd sourceCode []
-  | otherwise = error "Ivalid syntax error (mismatched brackets)!"
+parser :: String -> Either String Program
+parser "" = Left "Empty program!"
+parser sourceCode = validate $ Program $ convertToCmd sourceCode []
 
--- sourceCode = [LoopL,Decr,Right,Incr,Left,LoopR]
+-- sourceCode = [LoopL,Decr,MvRight,Incr,MvLeft,LoopR]
 convertToCmd :: String -> [BrainfuckCommand] -> [BrainfuckCommand]
 convertToCmd "" cmdLst = cmdLst
 convertToCmd (c : cs) cmdLst
-  | c == '>' = convertToCmd cs $ cmdLst ++ [Right]
-  | c == '<' = convertToCmd cs $ cmdLst ++ [Left]
+  | c == '>' = convertToCmd cs $ cmdLst ++ [MvRight]
+  | c == '<' = convertToCmd cs $ cmdLst ++ [MvLeft]
   | c == '+' = convertToCmd cs $ cmdLst ++ [Incr]
   | c == '-' = convertToCmd cs $ cmdLst ++ [Decr]
   | c == '.' = convertToCmd cs $ cmdLst ++ [Print]
@@ -49,15 +46,15 @@ convertToCmd (c : cs) cmdLst
   | otherwise = convertToCmd cs cmdLst -- comments are not needed so we skip them
 
 -- if the program only contains comments then there is nothing to interpret
-validate :: Program -> Program
-validate (Program []) = error "Program contains only comments!"
-validate (Program instrs) = Program instrs
+validate :: Program -> Either String Program
+validate (Program []) = Left "Program contains only comments!"
+validate (Program instrs) = Right $ Program instrs
 
 -----------------------------------------------------------------
 -- Utils
 
-checkSyntax :: String -> Bool
-checkSyntax sourceCode = go sourceCode 0
+checkSyntax :: String -> Maybe Bool
+checkSyntax sourceCode = if go sourceCode 0 then Just True else Nothing
   where
     go "" cnt = cnt == 0
     go ('[' : cs) cnt = go cs (cnt + 1)
@@ -67,14 +64,13 @@ checkSyntax sourceCode = go sourceCode 0
         else go cs (cnt - 1)
     go (_ : cs) cnt = go cs cnt -- skip non brackets
 
-isNumber :: String -> Bool
-isNumber "" = False
-isNumber "." = False
+isNumber :: String -> Maybe Integer
+isNumber "" = Nothing
+isNumber "." = Nothing
 isNumber xs =
   case dropWhile isDigit xs of
-    "" -> True
-    ('.' : ys) -> all isDigit ys
-    _ -> False
+    "" -> Just $ read xs
+    _ -> Nothing
 
 findLoopL :: Int -> Tape Int -> Tape BrainfuckCommand -> IO ()
 findLoopL 1 dataTape instrTape@(Tape _ LoopL _) = next dataTape instrTape
@@ -118,13 +114,13 @@ readData :: Tape Int -> Tape BrainfuckCommand -> IO ()
 readData dataTape@(Tape left _ right) instrTape = do
   putStrLn "Please enter a number:"
   input <- getLine
-  if isNumber input
+  if isNumber input == Just (read input :: Integer)
     then next (Tape left (read input :: Int) right) instrTape
     else error "Input is not a number!"
 
 loopL :: Tape Int -> Tape BrainfuckCommand -> IO ()
 loopL dataTape@(Tape _ curr _) instrTape
-  | curr == 0 = findLoopR 0 dataTape instrTape -- if the current data at the cell is zero then go to the correspomding LoopR
+  | curr == 0 = findLoopR 0 dataTape instrTape -- if the current data at the cell is zero then go to the corresponding LoopR
   | otherwise = next dataTape instrTape -- execute the instructions in the [...] loop
 
 loopR :: Tape Int -> Tape BrainfuckCommand -> IO ()
@@ -137,8 +133,8 @@ loopR dataTape@(Tape _ curr _) instrTape
 
 -- execute the program(instructions) onto the dataTape
 -- sourceCode = "->+<"
--- Program [Decr,Right,Incr,Left]
--- instrTape = [] Decr [Right,Incr,Left]
+-- Program [Decr,MvRight,Incr,MvLeft]
+-- instrTape = [] Decr [MvRight,Incr,MvLeft]
 runBrainfuck :: Program -> IO ()
 runBrainfuck (Program (c : cs)) = execute emptyTape instrTape
   where
@@ -146,8 +142,8 @@ runBrainfuck (Program (c : cs)) = execute emptyTape instrTape
 
 -- execute function evaluates one instruction
 execute :: Tape Int -> Tape BrainfuckCommand -> IO ()
-execute dataTape instrTape@(Tape _ Left _) = next (moveLeft dataTape) instrTape
-execute dataTape instrTape@(Tape _ Right _) = next (moveRight dataTape) instrTape
+execute dataTape instrTape@(Tape _ MvLeft _) = next (moveLeft dataTape) instrTape
+execute dataTape instrTape@(Tape _ MvRight _) = next (moveRight dataTape) instrTape
 execute dataTape instrTape@(Tape _ Incr _) = next (incrData dataTape) instrTape
 execute dataTape instrTape@(Tape _ Decr _) = next (decrData dataTape) instrTape
 execute dataTape instrTape@(Tape _ Print _) = printData dataTape instrTape
@@ -165,4 +161,18 @@ next dataTape instrTape = execute dataTape (moveRight instrTape)
 -- Running
 
 run :: String -> IO ()
-run input = runBrainfuck $ parser input
+run input = if isNothing $ checkSyntax input then print isInputCorrect else parsedInput
+  where
+    isInputCorrect = checkSyntax input
+    parsedInput = case parser input of
+      Left message -> print message
+      Right program -> runBrainfuck program
+
+-----------------------------------------------------------------
+
+main :: IO ()
+main = do
+  putStrLn "Filename: "
+  fileName <- getLine
+  contents <- readFile fileName
+  run contents
